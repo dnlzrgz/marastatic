@@ -1,0 +1,13 @@
+[site]
+assets_dir = "static/"
+templates_dir = "templates/"
+content_dir = "content/"
+build_dir = "build/"
+base_url = 'https://marastatic.com'
+enable_robots_txt = false
+enable_sitemap = false
+dateField = 'published_date'
+
+[params]
+title = "marastatic"
+description = "The simplest SSG you can imagine."

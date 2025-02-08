@@ -1,0 +1,24 @@
+[project]
+name = "marastatic"
+version = "0.1.1"
+description = "A simple SSG."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "jinja2>=3.1.5",
+  "markdown>=3.7",
+  "pydantic>=2.10.6",
+  "python-frontmatter>=1.1.0",
+  "rich>=13.9.4",
+  "typer>=0.15.1",
+]
+
+[dependency-groups]
+dev = ["commitizen>=4.1.1", "pytest>=8.3.4", "ruff>=0.9.4"]
+
+[project.scripts]
+marastatic = "marastatic:cli.main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
