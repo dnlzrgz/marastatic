@@ -3,12 +3,7 @@ clean:
 	find . -type d -name "__pycache__" -delete
 
 lint:
-	uv run ruff check --fix
+	uv tool run ruff check --fix
 
 format:
-	uv run ruff format
-
-update:
-	uv lock --upgrade
-	uv sync
-
+	uv tool run ruff format
