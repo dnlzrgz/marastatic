@@ -3,7 +3,6 @@
 # dependencies = [
 #   "jinja2>=3.1.5",
 #   "markdown>=3.7",
-#   "pydantic>=2.10.6",
 #   "python-frontmatter>=1.1.0",
 #   "rich>=13.9.4",
 #   "typer>=0.15.1",
@@ -11,125 +10,209 @@
 # ///
 
 import tomllib
-from shutil import copytree, ignore_patterns
+from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Generator, Optional
+from shutil import copytree, ignore_patterns
+from urllib.parse import ParseResult
+from typing import Annotated
+from urllib.parse import urlparse
 import frontmatter
-import typer
 import markdown
+import typer
 from jinja2 import Environment as Jinja2Environment
 from jinja2 import FileSystemLoader
-from pydantic import BaseModel, DirectoryPath, HttpUrl, field_validator, ValidationError
 from rich import print
-from rich.console import Console
 
 app = typer.Typer()
-console = Console()
 
 
-class SiteConfig(BaseModel):
-    static_dir: DirectoryPath
-    templates_dir: DirectoryPath
-    content_dir: DirectoryPath
-    build_dir: DirectoryPath
-    base_url: HttpUrl
-    dateField: str
-
-    @field_validator(
-        "static_dir",
-        "templates_dir",
-        "content_dir",
-        "build_dir",
-        mode="before",
-    )
-    @classmethod
-    def check_directory_exists(cls, v) -> Path:
-        path = Path(v)
-        if not path.exists():
-            raise ValueError(f"dir '{v}' does not exist.")
-        if not path.is_dir():
-            raise ValueError(f"'{v}' is not a valid directory.")
-
-        return path
+# ==============================
+# Custom exceptions & errors
+# ==============================
 
 
-class Config(BaseModel):
+class ConfigValidationError(Exception):
+    pass
+
+
+# ==============================
+# Validators
+# ==============================
+
+
+def validate_directory(value: str) -> Path:
+    path = Path(value)
+    if not path.exists():
+        raise ConfigValidationError(f"directory '{path}' does not exist.")
+    if not path.is_dir():
+        raise ConfigValidationError(f"'{path}' is not a directory.")
+
+    return path
+
+
+def validate_url(url: str) -> ParseResult:
+    parsed = urlparse(url)
+    if not all([parsed.scheme, parsed.netloc]):
+        raise ConfigValidationError(f"'{url}' is not a valid URL.")
+
+    return parsed
+
+
+# ==============================
+# Configuration
+# ==============================
+
+
+class SiteConfig:
+    """
+    Represents the required configuration settings for the site.
+    """
+
+    def __init__(
+        self,
+        static_dir: str,
+        templates_dir: str,
+        content_dir: str,
+        build_dir: str,
+        base_url: str,
+    ) -> None:
+        self.static_dir: Path = validate_directory(static_dir)
+        self.templates_dir: Path = validate_directory(templates_dir)
+        self.content_dir: Path = validate_directory(content_dir)
+        self.build_dir: Path = validate_directory(build_dir)
+        self.base_url: ParseResult = validate_url(base_url)
+
+
+@dataclass
+class Config:
+    """
+    Represents the overall configuration for the site.
+    """
+
     site: SiteConfig
-    params: dict | None = None
+    params: dict | None = field(default_factory=dict)
 
 
-def list_site_content(path: Path) -> Generator:
+# ==============================
+# Util functions
+# ==============================
+
+
+def handle_error(message: str) -> None:
+    print(f"[red bold]Error:[/] {message}")
+    raise typer.Abort()
+
+
+def list_site_content(path: Path) -> list[str]:
+    content_list = []
     for file in path.rglob("*.md"):
-        if file.is_file():
-            yield [file.absolute(), file.relative_to(path).as_posix()]
+        relative_path = file.relative_to(path).as_posix()
+        content_list.append(relative_path)
+
+    content_list.sort(key=lambda x: (x.count("/"), not x.endswith("index.md"), x))
+    content_list.reverse()
+    return content_list
+
+
+def load_config(config_file: Path) -> Config:
+    if not config_file or not config_file.exists():
+        handle_error("config file does not exists or was not provided.")
+
+    if not config_file.is_file():
+        handle_error(f"config file '{config_file.name}' is not valid.")
+
+    try:
+        raw_toml = config_file.read_text()
+        parsed_toml = tomllib.loads(raw_toml)
+
+        site_config = SiteConfig(**parsed_toml["site"])
+        params = parsed_toml.get("params", {})
+
+        return Config(site=site_config, params=params)
+    except tomllib.TOMLDecodeError as e:
+        handle_error(
+            f"something went wrong while parsing TOML from '{config_file.name}': {e}"
+        )
+    except ConfigValidationError as e:
+        handle_error(f"config validation failed: {e}")
+    except Exception as e:
+        handle_error(
+            f"something went wrong while reading configuration file '{config_file.name}': {e}"
+        )
+
+
+# ==============================
+# Main function
+# ==============================
 
 
 @app.command()
 def build(
     config_file: Annotated[
-        Optional[Path],
+        Path,
         typer.Option(),
-    ] = None,
+    ],
 ) -> None:
-    if not config_file or not config_file.exists():
-        print("[red bold]Error:[/] config file does not exists or was not provided.")
-        raise typer.Abort()
+    config = load_config(config_file)
 
-    if not config_file.is_file():
-        print(
-            f"[red bold]Error:[/] config file '{config_file.name}' is not a valid file."
-        )
-        raise typer.Abort()
+    content_path = Path(config.site.content_dir)
+    static_dir = Path(config.site.static_dir)
+    templates_dir = Path(config.site.templates_dir)
+    output_path = Path(config.site.build_dir)
 
-    with console.status(
-        "building site...",
-        spinner="earth",
-    ) as status:
-        status.update("reading configuration file...")
+    jinja_env = Jinja2Environment(loader=FileSystemLoader(templates_dir))
+    pages = defaultdict(list)
+
+    for page in list_site_content(content_path):
+        relative_path = Path(page)
+        absolute_path = content_path / page
+        parent_name = relative_path.parent.name
+        parent_name = parent_name if parent_name else "root"
+
+        source = frontmatter.load(absolute_path)
+        html_content = markdown.markdown(source.content)
+
+        template_name = f"{relative_path.stem}.html"
+        template_path = f"{relative_path.parent}/{template_name}"
 
         try:
-            raw_toml = config_file.read_text()
-            parsed_toml = tomllib.loads(raw_toml)
-            config = Config(**parsed_toml)
-        except tomllib.TOMLDecodeError as e:
-            console.print(
-                f"[red bold]Error:[/] something went wrong while parsing TOML from '{config_file.name}': {e}"
+            template = jinja_env.get_template(template_path)
+        except Exception:
+            template_path = f"{relative_path.parent}/single.html"
+            template = jinja_env.get_template(template_path)
+
+        if "index.md" in relative_path.name:
+            if parent_name == "root":
+                output_content = template.render(
+                    site=config.site,
+                    params=config.params,
+                    metadata=source.metadata,
+                    content=html_content,
+                    pages=pages,
+                )
+            else:
+                output_content = template.render(
+                    site=config.site,
+                    params=config.params,
+                    metadata=source.metadata,
+                    content=html_content,
+                    pages=pages[parent_name],
+                )
+                pages["root"].append(
+                    {
+                        "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
+                        "metadata": source.metadata,
+                    }
+                )
+
+        else:
+            pages[parent_name].append(
+                {
+                    "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
+                    "metadata": source.metadata,
+                }
             )
-            raise typer.Abort()
-        except ValidationError as e:
-            console.print(f"[red bold]Error:[/] config validation failed: {e}")
-            raise typer.Abort()
-        except Exception as e:
-            console.print(
-                f"[red bold]Error:[/] something went wrong while reading configuration file '{config_file.name}': {e}"
-            )
-            raise typer.Abort()
-
-        status.update("loading templates...")
-        jinja_env = Jinja2Environment(
-            loader=FileSystemLoader(config.site.templates_dir),
-        )
-
-        content_path = Path(config.site.content_dir)
-        output_path = Path(config.site.build_dir)
-        static_dir = Path(config.site.static_dir)
-
-        status.update("generating files...")
-        # TODO: if file is an index, it should be able to have access to all the files in its directory.
-        # TODO: same goes for RSS, and sitemap.xml files.
-        for file_path, relative_path in list_site_content(content_path):
-            source = frontmatter.load(file_path)
-            html_content = markdown.markdown(source.content)
-
-            relative_path = Path(relative_path)
-            template_name = f"{relative_path.stem}.html"
-            template_path = f"{relative_path.parent}/{template_name}"
-
-            try:
-                template = jinja_env.get_template(template_path)
-            except Exception:
-                template_path = f"{relative_path.parent}/single.html"
-                template = jinja_env.get_template(template_path)
 
             output_content = template.render(
                 site=config.site,
@@ -138,32 +221,32 @@ def build(
                 content=html_content,
             )
 
-            output_file_path = output_path / relative_path.with_suffix(".html")
-            output_file_path.parent.mkdir(parents=True, exist_ok=True)
-            output_file_path.write_text(output_content, encoding="utf-8")
+        output_file_path = output_path / relative_path.with_suffix(".html")
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+        output_file_path.write_text(output_content, encoding="utf-8")
 
-            console.print(f"[bold green]Ok:[/] created '{output_file_path}'.")
+        print(f"[bold green]Ok:[/] created '{output_file_path}'.")
 
-        status.update("cloning non-Markdown files...")
-        copytree(
-            content_path,
-            output_path,
-            ignore=ignore_patterns("*.md"),
-            dirs_exist_ok=True,
-        )
-        console.print(
-            f"[bold green]Ok:[/] cloned non-Markdown files to '{output_path.name}' build folder."
-        )
+        print(pages)
 
-        status.update("cloning assets...")
-        copytree(
-            static_dir,
-            output_path.joinpath(static_dir.name),
-            dirs_exist_ok=True,
-        )
-        console.print(
-            f"[bold green]Ok:[/] cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
-        )
+    copytree(
+        content_path,
+        output_path,
+        ignore=ignore_patterns("*.md"),
+        dirs_exist_ok=True,
+    )
+    print(
+        f"[bold green]Ok:[/] cloned non-Markdown files to '{output_path.name}' build folder."
+    )
+
+    copytree(
+        static_dir,
+        output_path.joinpath(static_dir.name),
+        dirs_exist_ok=True,
+    )
+    print(
+        f"[bold green]Ok:[/] cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
+    )
 
 
 def main():
