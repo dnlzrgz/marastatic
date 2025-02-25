@@ -11,7 +11,6 @@
 
 import tomllib
 from collections import defaultdict
-from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import copytree, ignore_patterns
 from urllib.parse import ParseResult
@@ -84,14 +83,14 @@ class SiteConfig:
         self.base_url: ParseResult = validate_url(base_url)
 
 
-@dataclass
 class Config:
     """
     Represents the overall configuration for the site.
     """
 
-    site: SiteConfig
-    params: dict | None = field(default_factory=dict)
+    def __init__(self, site: SiteConfig, params: dict | None = None) -> None:
+        self.site = site
+        self.params = params if params is not None else {}
 
 
 # ==============================
@@ -226,8 +225,6 @@ def build(
         output_file_path.write_text(output_content, encoding="utf-8")
 
         print(f"[bold green]Ok:[/] created '{output_file_path}'.")
-
-        print(pages)
 
     copytree(
         content_path,
