@@ -141,19 +141,6 @@ def load_config(config_file: Path) -> Config:
         )
 
 
-def render_template(template, context, pages, parent_name):
-    if parent_name == "root":
-        return template.render(
-            **context,
-            pages=pages,
-        )
-    else:
-        return template.render(
-            **context,
-            pages=pages[parent_name],
-        )
-
-
 # ==============================
 # Main function
 # ==============================
@@ -186,6 +173,7 @@ def build(
         content = markdown.markdown(source.content)
 
         template_name = f"{relative_path.stem}.html"
+
         template_path = f"{relative_path.parent}/{template_name}"
 
         context = {
@@ -210,12 +198,17 @@ def build(
         except Exception as e:
             handle_error(f"could not find a valid template for '{relative_path}': {e}")
 
-        output = render_template(
-            template,
-            context,
-            pages,
-            parent_name,
-        )
+        if parent_name == "root":
+            output = template.render(
+                **context,
+                pages=pages,
+            )
+        else:
+            output = template.render(
+                **context,
+                pages=pages[parent_name],
+            )
+
         pages[parent_name].append(page_entry)
 
         output_file_path = output_path / relative_path.with_suffix(".html")
@@ -224,10 +217,25 @@ def build(
 
         print(f"[bold green]Ok:[/] created '{output_file_path}'.")
 
+        if relative_path.stem == "index":
+            rss_template_path = f"{relative_path.parent}/rss.xml"
+            try:
+                rss_output = jinja_env.get_template(rss_template_path).render(
+                    site=config.site,
+                    params=config.params,
+                    pages=pages[parent_name],
+                )
+                rss_output_path = output_path / f"{relative_path.parent}/rss.xml"
+                rss_output_path.write_text(rss_output, encoding="utf-8")
+
+                print(f"[bold green]Ok:[/] created '{relative_path.parent}' rss feed.")
+            except Exception:
+                continue
+
     copytree(
         content_path,
         output_path,
-        ignore=ignore_patterns("*.md"),
+        ignore=ignore_patterns("*.md", "*.xml}"),
         dirs_exist_ok=True,
     )
     print(
