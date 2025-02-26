@@ -43,9 +43,9 @@ class ConfigValidationError(Exception):
 def validate_directory(value: str) -> Path:
     path = Path(value)
     if not path.exists():
-        raise ConfigValidationError(f"directory '{path}' does not exist.")
+        raise ConfigValidationError(f"Directory '{path}' does not exist.")
     if not path.is_dir():
-        raise ConfigValidationError(f"'{path}' is not a directory.")
+        raise ConfigValidationError(f"Path '{path}' is not a directory.")
 
     return path
 
@@ -53,7 +53,7 @@ def validate_directory(value: str) -> Path:
 def validate_url(url: str) -> ParseResult:
     parsed = urlparse(url)
     if not all([parsed.scheme, parsed.netloc]):
-        raise ConfigValidationError(f"'{url}' is not a valid URL.")
+        raise ConfigValidationError(f"Invalid '{url}'.")
 
     return parsed
 
@@ -99,7 +99,7 @@ class Config:
 
 
 def handle_error(message: str) -> None:
-    print(f"[red bold]Error:[/] {message}")
+    print(f"[bold italic red]Error:[/] {message}")
     raise typer.Abort()
 
 
@@ -130,15 +130,11 @@ def load_config(config_file: Path) -> Config:
 
         return Config(site=site_config, params=params)
     except tomllib.TOMLDecodeError as e:
-        handle_error(
-            f"something went wrong while parsing TOML from '{config_file.name}': {e}"
-        )
+        handle_error(f"Failed to parse TOML from '{config_file.name}': {e}")
     except ConfigValidationError as e:
-        handle_error(f"config validation failed: {e}")
+        handle_error(f"Configuration validation failed: {e}")
     except Exception as e:
-        handle_error(
-            f"something went wrong while reading configuration file '{config_file.name}': {e}"
-        )
+        handle_error(f"Unexpected error reading '{config_file.name}': {e}")
 
 
 # ==============================
@@ -166,15 +162,15 @@ def build(
     for page in list_site_content(content_path):
         relative_path = Path(page)
         absolute_path = content_path / page
-        parent_name = relative_path.parent.name
+        relative_parent_path = relative_path.parent
+        parent_name = relative_parent_path.name
         parent_name = parent_name if parent_name else "root"
 
         source = frontmatter.load(absolute_path)
         content = markdown.markdown(source.content)
 
         template_name = f"{relative_path.stem}.html"
-
-        template_path = f"{relative_path.parent}/{template_name}"
+        template_path = f"{relative_parent_path}/{template_name}"
 
         context = {
             "site": config.site,
@@ -192,11 +188,11 @@ def build(
             template = jinja_env.get_or_select_template(
                 [
                     template_path,
-                    f"{relative_path.parent}/single.html",
+                    f"{relative_parent_path}/single.html",
                 ]
             )
         except Exception as e:
-            handle_error(f"could not find a valid template for '{relative_path}': {e}")
+            handle_error(f"Template not found for '{relative_path}': {e}")
 
         if parent_name == "root":
             output = template.render(
@@ -215,22 +211,38 @@ def build(
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
         output_file_path.write_text(output, encoding="utf-8")
 
-        print(f"[bold green]Ok:[/] created '{output_file_path}'.")
+        print(f"[bold green]Ok:[/] Created '{output_file_path}'.")
 
         if relative_path.stem == "index":
-            rss_template_path = f"{relative_path.parent}/rss.xml"
+            rss_template_path = f"{relative_parent_path}/rss.xml"
             try:
                 rss_output = jinja_env.get_template(rss_template_path).render(
                     site=config.site,
                     params=config.params,
                     pages=pages[parent_name],
                 )
-                rss_output_path = output_path / f"{relative_path.parent}/rss.xml"
+                rss_output_path = output_path / f"{relative_parent_path}/rss.xml"
                 rss_output_path.write_text(rss_output, encoding="utf-8")
 
-                print(f"[bold green]Ok:[/] created '{relative_path.parent}' rss feed.")
+                print(
+                    f"[bold green]Ok:[/] Created RSS feed for '{relative_parent_path}'."
+                )
             except Exception:
-                continue
+                pass
+
+        sitemap_template_path = f"{relative_parent_path}/sitemap.xml"
+        try:
+            sitemap_output = jinja_env.get_template(sitemap_template_path).render(
+                site=config.site,
+                params=config.params,
+                pages=pages,
+            )
+            sitemap_output_path = output_path / f"{relative_parent_path}/sitemap.xml"
+            sitemap_output_path.write_text(sitemap_output, encoding="utf-8")
+
+            print("[bold green]Ok:[/] Created sitemap.xml.")
+        except Exception:
+            pass
 
     copytree(
         content_path,
@@ -239,7 +251,7 @@ def build(
         dirs_exist_ok=True,
     )
     print(
-        f"[bold green]Ok:[/] cloned non-Markdown files to '{output_path.name}' build folder."
+        f"[bold green]Ok:[/] Cloned non-Markdown files to '{output_path.name}' build folder."
     )
 
     copytree(
@@ -248,7 +260,7 @@ def build(
         dirs_exist_ok=True,
     )
     print(
-        f"[bold green]Ok:[/] cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
+        f"[bold green]Ok:[/] Cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
     )
 
 
