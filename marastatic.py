@@ -141,6 +141,19 @@ def load_config(config_file: Path) -> Config:
         )
 
 
+def render_template(template, context, pages, parent_name):
+    if parent_name == "root":
+        return template.render(
+            **context,
+            pages=pages,
+        )
+    else:
+        return template.render(
+            **context,
+            pages=pages[parent_name],
+        )
+
+
 # ==============================
 # Main function
 # ==============================
@@ -170,59 +183,44 @@ def build(
         parent_name = parent_name if parent_name else "root"
 
         source = frontmatter.load(absolute_path)
-        html_content = markdown.markdown(source.content)
+        content = markdown.markdown(source.content)
 
         template_name = f"{relative_path.stem}.html"
         template_path = f"{relative_path.parent}/{template_name}"
 
+        context = {
+            "site": config.site,
+            "params": config.params,
+            "metadata": source.metadata,
+            "content": content,
+        }
+
+        page_entry = {
+            "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
+            "metadata": source.metadata,
+        }
+
         try:
-            template = jinja_env.get_template(template_path)
-        except Exception:
-            template_path = f"{relative_path.parent}/single.html"
-            template = jinja_env.get_template(template_path)
-
-        if "index.md" in relative_path.name:
-            if parent_name == "root":
-                output_content = template.render(
-                    site=config.site,
-                    params=config.params,
-                    metadata=source.metadata,
-                    content=html_content,
-                    pages=pages,
-                )
-            else:
-                output_content = template.render(
-                    site=config.site,
-                    params=config.params,
-                    metadata=source.metadata,
-                    content=html_content,
-                    pages=pages[parent_name],
-                )
-                pages["root"].append(
-                    {
-                        "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
-                        "metadata": source.metadata,
-                    }
-                )
-
-        else:
-            pages[parent_name].append(
-                {
-                    "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
-                    "metadata": source.metadata,
-                }
+            template = jinja_env.get_or_select_template(
+                [
+                    template_path,
+                    f"{relative_path.parent}/single.html",
+                ]
             )
+        except Exception as e:
+            handle_error(f"could not find a valid template for '{relative_path}': {e}")
 
-            output_content = template.render(
-                site=config.site,
-                params=config.params,
-                metadata=source.metadata,
-                content=html_content,
-            )
+        output = render_template(
+            template,
+            context,
+            pages,
+            parent_name,
+        )
+        pages[parent_name].append(page_entry)
 
         output_file_path = output_path / relative_path.with_suffix(".html")
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        output_file_path.write_text(output_content, encoding="utf-8")
+        output_file_path.write_text(output, encoding="utf-8")
 
         print(f"[bold green]Ok:[/] created '{output_file_path}'.")
 
