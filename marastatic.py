@@ -104,11 +104,7 @@ def handle_error(message: str) -> None:
 
 
 def list_site_content(path: Path) -> list[str]:
-    content_list = []
-    for file in path.rglob("*.md"):
-        relative_path = file.relative_to(path).as_posix()
-        content_list.append(relative_path)
-
+    content_list = [file.relative_to(path).as_posix() for file in path.rglob("*.md")]
     content_list.sort(key=lambda x: (x.count("/"), not x.endswith("index.md"), x))
     content_list.reverse()
     return content_list
@@ -157,6 +153,7 @@ def build(
     output_path = Path(config.site.build_dir)
 
     jinja_env = Jinja2Environment(loader=FileSystemLoader(templates_dir))
+    jinja_env.globals.update(config=config)
     pages = defaultdict(list)
 
     for page in list_site_content(content_path):
@@ -168,13 +165,9 @@ def build(
 
         source = frontmatter.load(absolute_path)
         content = markdown.markdown(source.content)
-
-        template_name = f"{relative_path.stem}.html"
-        template_path = f"{relative_parent_path}/{template_name}"
+        template_path = f"{relative_parent_path}/{relative_path.stem}.html"
 
         context = {
-            "site": config.site,
-            "params": config.params,
             "metadata": source.metadata,
             "content": content,
         }
@@ -195,15 +188,9 @@ def build(
             handle_error(f"Template not found for '{relative_path}': {e}")
 
         if parent_name == "root":
-            output = template.render(
-                **context,
-                pages=pages,
-            )
+            output = template.render(**context, pages=pages)
         else:
-            output = template.render(
-                **context,
-                pages=pages[parent_name],
-            )
+            output = template.render(**context, pages=pages[parent_name])
 
         pages[parent_name].append(page_entry)
 
@@ -217,8 +204,6 @@ def build(
             rss_template_path = f"{relative_parent_path}/rss.xml"
             try:
                 rss_output = jinja_env.get_template(rss_template_path).render(
-                    site=config.site,
-                    params=config.params,
                     pages=pages[parent_name],
                 )
                 rss_output_path = output_path / f"{relative_parent_path}/rss.xml"
@@ -230,19 +215,15 @@ def build(
             except Exception:
                 pass
 
-        sitemap_template_path = f"{relative_parent_path}/sitemap.xml"
-        try:
-            sitemap_output = jinja_env.get_template(sitemap_template_path).render(
-                site=config.site,
-                params=config.params,
-                pages=pages,
-            )
-            sitemap_output_path = output_path / f"{relative_parent_path}/sitemap.xml"
-            sitemap_output_path.write_text(sitemap_output, encoding="utf-8")
+    try:
+        sitemap_output = jinja_env.get_template("/sitemap.xml").render(pages=pages)
+        sitemap_output_path = output_path / "sitemap.xml"
+        sitemap_output_path.write_text(sitemap_output, encoding="utf-8")
 
-            print("[bold green]Ok:[/] Created sitemap.xml.")
-        except Exception:
-            pass
+        print("[bold green]Ok:[/] Created sitemap.xml.")
+    except Exception:
+        print("[bold orange1]Skip:[/] Skipping sitemap creation.")
+        pass
 
     copytree(
         content_path,
