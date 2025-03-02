@@ -4,26 +4,46 @@
 #   "jinja2>=3.1.5",
 #   "markdown>=3.7",
 #   "python-frontmatter>=1.1.0",
-#   "rich>=13.9.4",
-#   "typer>=0.15.1",
 # ]
 # ///
 
+import argparse
+import sys
 import tomllib
 from collections import defaultdict
 from pathlib import Path
 from shutil import copytree, ignore_patterns
 from urllib.parse import ParseResult
-from typing import Annotated
 from urllib.parse import urlparse
 import frontmatter
 import markdown
-import typer
 from jinja2 import Environment as Jinja2Environment
 from jinja2 import FileSystemLoader
-from rich import print
 
-app = typer.Typer()
+# ==============================
+# ANSI escape codes for colors
+# ==============================
+
+RESET = "\033[0m"
+BOLD_RED = "\033[1;31m"
+BOLD_GREEN = "\033[1;32m"
+BOLD_ORANGE = "\033[1;38;5;214m"
+
+# ==============================
+# Custom print functions
+# ==============================
+
+
+def print_error(message: str) -> None:
+    print(f"{BOLD_RED}Error{RESET}: {message}")
+
+
+def print_success(message: str) -> None:
+    print(f"{BOLD_GREEN}Ok{RESET}: {message}")
+
+
+def print_warning(message: str) -> None:
+    print(f"{BOLD_ORANGE}Warning{RESET}: {message}")
 
 
 # ==============================
@@ -98,12 +118,7 @@ class Config:
 # ==============================
 
 
-def handle_error(message: str) -> None:
-    print(f"[bold italic red]Error:[/] {message}")
-    raise typer.Abort()
-
-
-def list_site_content(path: Path) -> list[str]:
+def list_content(path: Path) -> list[str]:
     content_list = [file.relative_to(path).as_posix() for file in path.rglob("*.md")]
     content_list.sort(key=lambda x: (x.count("/"), not x.endswith("index.md"), x))
     content_list.reverse()
@@ -112,10 +127,10 @@ def list_site_content(path: Path) -> list[str]:
 
 def load_config(config_file: Path) -> Config:
     if not config_file or not config_file.exists():
-        handle_error("config file does not exists or was not provided.")
+        raise Exception("config file does not exists or was not provided.")
 
     if not config_file.is_file():
-        handle_error(f"config file '{config_file.name}' is not valid.")
+        raise Exception(f"config file '{config_file.name}' is not valid.")
 
     try:
         raw_toml = config_file.read_text()
@@ -126,11 +141,11 @@ def load_config(config_file: Path) -> Config:
 
         return Config(site=site_config, params=params)
     except tomllib.TOMLDecodeError as e:
-        handle_error(f"Failed to parse TOML from '{config_file.name}': {e}")
+        raise Exception(f"Failed to parse TOML from '{config_file.name}': {e}.")
     except ConfigValidationError as e:
-        handle_error(f"Configuration validation failed: {e}")
+        raise Exception(f"Configuration validation failed: {e}")
     except Exception as e:
-        handle_error(f"Unexpected error reading '{config_file.name}': {e}")
+        raise Exception(f"Unexpected error reading '{config_file.name}': {e}")
 
 
 def render_template(template, parent, context, pages):
@@ -145,15 +160,7 @@ def render_template(template, parent, context, pages):
 # ==============================
 
 
-@app.command()
-def build(
-    config_file: Annotated[
-        Path,
-        typer.Option(),
-    ],
-) -> None:
-    config = load_config(config_file)
-
+def build(config: Config) -> None:
     content_path = config.site.content_dir
     static_dir = config.site.static_dir
     templates_dir = config.site.templates_dir
@@ -163,7 +170,7 @@ def build(
     jinja_env.globals.update(config=config)
     pages = defaultdict(list)
 
-    for page in list_site_content(content_path):
+    for page in list_content(content_path):
         relative_path = Path(page)
         absolute_path = content_path / page
         relative_parent_path = relative_path.parent
@@ -191,14 +198,14 @@ def build(
                 ]
             )
         except Exception as e:
-            handle_error(f"Template not found for '{relative_path}': {e}")
+            raise Exception(f"Template not found for '{relative_path}': {e}")
 
         output = render_template(template, parent_name, context, pages)
         output_file_path = output_path / relative_path.with_suffix(".html")
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
         output_file_path.write_text(output, encoding="utf-8")
 
-        print(f"[bold green]Ok:[/] Created '{output_file_path}'.")
+        print_success(f"Created '{output_file_path}'.")
 
         if relative_path.stem == "index":
             rss_template_path = f"{relative_parent_path}/rss.xml"
@@ -209,12 +216,10 @@ def build(
                 rss_output_path = output_path / f"{relative_parent_path}/rss.xml"
                 rss_output_path.write_text(rss_output, encoding="utf-8")
 
-                print(
-                    f"[bold green]Ok:[/] Created RSS feed for '{relative_parent_path}'."
-                )
+                print_success(f"Created RSS feed for '{relative_parent_path}'.")
             except Exception as e:
-                print(
-                    f"[bold orange1]Skip:[/] Skipping RSS feed creation for '{relative_parent_path}': {e}."
+                print_warning(
+                    f"Skipping RSS feed creation for '{relative_parent_path}': {e}."
                 )
         else:
             pages[parent_name].append(page_entry)
@@ -224,9 +229,9 @@ def build(
         sitemap_output_path = output_path / "sitemap.xml"
         sitemap_output_path.write_text(sitemap_output, encoding="utf-8")
 
-        print("[bold green]Ok:[/] Created sitemap.xml.")
+        print_success("Created sitemap.xml.")
     except Exception:
-        print("[bold orange1]Skip:[/] Skipping sitemap creation.")
+        print_warning("Skipping sitemap creation.")
         pass
 
     copytree(
@@ -235,22 +240,37 @@ def build(
         ignore=ignore_patterns("*.md", "*.xml}"),
         dirs_exist_ok=True,
     )
-    print(
-        f"[bold green]Ok:[/] Cloned non-Markdown files to '{output_path.name}' build folder."
-    )
+    print_success(f"Cloned non-Markdown files to '{output_path.name}' build folder.")
 
     copytree(
         static_dir,
         output_path.joinpath(static_dir.name),
         dirs_exist_ok=True,
     )
-    print(
-        f"[bold green]Ok:[/] Cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
+    print_success(
+        f"Cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
     )
 
 
 def main():
-    app()
+    parser = argparse.ArgumentParser(
+        prog="marastatic",
+        description="A dead simple single-file static site generator.",
+    )
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default="config.toml",
+        help="Path to the configuration file (TOML).",
+    )
+    args = parser.parse_args()
+
+    try:
+        config = load_config(args.config_file)
+        build(config)
+    except Exception as e:
+        print_error(f"{e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
