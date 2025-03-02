@@ -133,6 +133,13 @@ def load_config(config_file: Path) -> Config:
         handle_error(f"Unexpected error reading '{config_file.name}': {e}")
 
 
+def render_template(template, parent, context, pages):
+    if parent == "root":
+        return template.render(**context, pages=pages)
+    else:
+        return template.render(**context, pages=pages[parent])
+
+
 # ==============================
 # Main function
 # ==============================
@@ -147,10 +154,10 @@ def build(
 ) -> None:
     config = load_config(config_file)
 
-    content_path = Path(config.site.content_dir)
-    static_dir = Path(config.site.static_dir)
-    templates_dir = Path(config.site.templates_dir)
-    output_path = Path(config.site.build_dir)
+    content_path = config.site.content_dir
+    static_dir = config.site.static_dir
+    templates_dir = config.site.templates_dir
+    output_path = config.site.build_dir
 
     jinja_env = Jinja2Environment(loader=FileSystemLoader(templates_dir))
     jinja_env.globals.update(config=config)
@@ -160,8 +167,7 @@ def build(
         relative_path = Path(page)
         absolute_path = content_path / page
         relative_parent_path = relative_path.parent
-        parent_name = relative_parent_path.name
-        parent_name = parent_name if parent_name else "root"
+        parent_name = relative_parent_path.name if relative_parent_path.name else "root"
 
         source = frontmatter.load(absolute_path)
         content = markdown.markdown(source.content)
@@ -187,13 +193,7 @@ def build(
         except Exception as e:
             handle_error(f"Template not found for '{relative_path}': {e}")
 
-        if parent_name == "root":
-            output = template.render(**context, pages=pages)
-        else:
-            output = template.render(**context, pages=pages[parent_name])
-
-        pages[parent_name].append(page_entry)
-
+        output = render_template(template, parent_name, context, pages)
         output_file_path = output_path / relative_path.with_suffix(".html")
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
         output_file_path.write_text(output, encoding="utf-8")
@@ -212,8 +212,12 @@ def build(
                 print(
                     f"[bold green]Ok:[/] Created RSS feed for '{relative_parent_path}'."
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(
+                    f"[bold orange1]Skip:[/] Skipping RSS feed creation for '{relative_parent_path}': {e}."
+                )
+        else:
+            pages[parent_name].append(page_entry)
 
     try:
         sitemap_output = jinja_env.get_template("/sitemap.xml").render(pages=pages)
