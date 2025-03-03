@@ -1,5 +1,5 @@
 # /// script
-# requires-python=">=3.13"
+# requires-python=">=3.12"
 # dependencies = [
 #   "jinja2>=3.1.5",
 #   "markdown>=3.7",
@@ -264,7 +264,7 @@ def build(config: Config) -> None:
 def main():
     parser = argparse.ArgumentParser(
         prog="marastatic",
-        description="A dead simple single-file static site generator.",
+        description="Extremely simple single-file static site generator.",
     )
     parser.add_argument(
         "-c",

@@ -1,0 +1,10 @@
+[site]
+static_dir = ""
+templates_dir = ""
+content_dir = ""
+build_dir = ""
+base_url = ""
+
+[params]
+title = ""
+description = ""
