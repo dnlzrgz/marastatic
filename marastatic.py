@@ -1,5 +1,5 @@
 # /// script
-# requires-python=">=3.12"
+# requires-python=">=3.13"
 # dependencies = [
 #   "jinja2>=3.1.5",
 #   "markdown>=3.7",
@@ -148,6 +148,25 @@ def load_config(config_file: Path) -> Config:
         raise Exception(f"Unexpected error reading '{config_file.name}': {e}")
 
 
+def copy_static_files(content_path, static_dir, output_path):
+    copytree(
+        content_path,
+        output_path,
+        ignore=ignore_patterns("*.md", "*.xml}"),
+        dirs_exist_ok=True,
+    )
+    print_success(f"Cloned non-Markdown files to '{output_path.name}' build folder.")
+
+    copytree(
+        static_dir,
+        output_path.joinpath(static_dir.name),
+        dirs_exist_ok=True,
+    )
+    print_success(
+        f"Cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
+    )
+
+
 def render_template(template, parent, context, pages):
     if parent == "root":
         return template.render(**context, pages=pages)
@@ -201,20 +220,24 @@ def build(config: Config) -> None:
             raise Exception(f"Template not found for '{relative_path}': {e}")
 
         output = render_template(template, parent_name, context, pages)
+
         output_file_path = output_path / relative_path.with_suffix(".html")
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        output_file_path.write_text(output, encoding="utf-8")
+        with output_file_path.open("w", encoding="utf-8") as f:
+            f.write(output)
 
         print_success(f"Created '{output_file_path}'.")
 
         if relative_path.stem == "index":
             rss_template_path = f"{relative_parent_path}/rss.xml"
+
             try:
                 rss_output = jinja_env.get_template(rss_template_path).render(
                     pages=pages[parent_name],
                 )
                 rss_output_path = output_path / f"{relative_parent_path}/rss.xml"
-                rss_output_path.write_text(rss_output, encoding="utf-8")
+                with rss_output_path.open("w", encoding="utf-8") as f:
+                    f.write(rss_output)
 
                 print_success(f"Created RSS feed for '{relative_parent_path}'.")
             except Exception as e:
@@ -227,29 +250,15 @@ def build(config: Config) -> None:
     try:
         sitemap_output = jinja_env.get_template("/sitemap.xml").render(pages=pages)
         sitemap_output_path = output_path / "sitemap.xml"
-        sitemap_output_path.write_text(sitemap_output, encoding="utf-8")
+        with sitemap_output_path.open("w", encoding="utf-8") as f:
+            f.write(sitemap_output)
 
         print_success("Created sitemap.xml.")
     except Exception:
         print_warning("Skipping sitemap creation.")
         pass
 
-    copytree(
-        content_path,
-        output_path,
-        ignore=ignore_patterns("*.md", "*.xml}"),
-        dirs_exist_ok=True,
-    )
-    print_success(f"Cloned non-Markdown files to '{output_path.name}' build folder.")
-
-    copytree(
-        static_dir,
-        output_path.joinpath(static_dir.name),
-        dirs_exist_ok=True,
-    )
-    print_success(
-        f"Cloned static folder '{static_dir.name}' into '{output_path.name}' build folder."
-    )
+    copy_static_files(content_path, static_dir, output_path)
 
 
 def main():
@@ -258,6 +267,7 @@ def main():
         description="A dead simple single-file static site generator.",
     )
     parser.add_argument(
+        "-c",
         "--config-file",
         type=Path,
         default="config.toml",
