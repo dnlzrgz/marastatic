@@ -104,7 +104,7 @@ The `params` section let's you define all the settings that you may need to acce
 You can also add a subsection withing the `params` to handle any type of object or dictionary, as shown below:
 
 ```toml
-[params
+[params]
 title = "marastatic"
 
 [params.author]
