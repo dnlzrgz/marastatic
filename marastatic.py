@@ -1,7 +1,7 @@
 # /// script
 # requires-python=">=3.12"
 # dependencies = [
-#   "jinja2>=3.1.5",
+#   "jinja2>=3.1.6",
 #   "markdown>=3.7",
 #   "python-frontmatter>=1.1.0",
 # ]
@@ -120,8 +120,9 @@ class Config:
 
 def list_content(path: Path) -> list[str]:
     content_list = [file.relative_to(path).as_posix() for file in path.rglob("*.md")]
-    content_list.sort(key=lambda x: (x.count("/"), not x.endswith("index.md"), x))
-    content_list.reverse()
+    content_list.sort(
+        key=lambda x: (x.count("/"), not x.endswith("index.md"), x), reverse=True
+    )
     return content_list
 
 
@@ -148,7 +149,7 @@ def load_config(config_file: Path) -> Config:
         raise Exception(f"Unexpected error reading '{config_file.name}': {e}")
 
 
-def copy_static_files(content_path, static_dir, output_path):
+def copy_static_files(content_path: Path, static_dir: Path, output_path: Path) -> None:
     copytree(
         content_path,
         output_path,
@@ -197,7 +198,7 @@ def build(config: Config) -> None:
 
         source = frontmatter.load(absolute_path)
         content = markdown.markdown(source.content)
-        template_path = f"{relative_parent_path}/{relative_path.stem}.html"
+        template_path = relative_parent_path / relative_path.with_suffix(".html")
 
         context = {
             "metadata": source.metadata,
@@ -205,15 +206,15 @@ def build(config: Config) -> None:
         }
 
         page_entry = {
-            "url": f"{config.site.base_url.path}/{relative_path.with_suffix('.html')}",
+            "url": config.site.base_url.path / relative_path.with_suffix(".html"),
             "metadata": source.metadata,
         }
 
         try:
             template = jinja_env.get_or_select_template(
                 [
-                    template_path,
-                    f"{relative_parent_path}/single.html",
+                    template_path.as_posix(),
+                    (relative_parent_path / "single.html").as_posix(),
                 ]
             )
         except Exception as e:
@@ -229,13 +230,15 @@ def build(config: Config) -> None:
         print_success(f"Created '{output_file_path}'.")
 
         if relative_path.stem == "index":
-            rss_template_path = f"{relative_parent_path}/rss.xml"
+            rss_template_path = relative_parent_path / "rss.xml"
 
             try:
-                rss_output = jinja_env.get_template(rss_template_path).render(
+                rss_output = jinja_env.get_template(
+                    rss_template_path.as_posix()
+                ).render(
                     pages=pages[parent_name],
                 )
-                rss_output_path = output_path / f"{relative_parent_path}/rss.xml"
+                rss_output_path = output_path / relative_parent_path / "rss.xml"
                 with rss_output_path.open("w", encoding="utf-8") as f:
                     f.write(rss_output)
 
