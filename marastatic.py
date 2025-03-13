@@ -197,8 +197,10 @@ def build(config: Config) -> None:
         parent_name = relative_parent_path.name if relative_parent_path.name else "root"
 
         source = frontmatter.load(absolute_path)
-        content = markdown.markdown(source.content)
-        template_path = relative_parent_path / relative_path.with_suffix(".html")
+        content = markdown.markdown(
+            source.content, extensions=["fenced_code", "tables", "wikilinks", "abbr"]
+        )
+        template_path = relative_path.with_suffix(".html")
 
         context = {
             "metadata": source.metadata,
