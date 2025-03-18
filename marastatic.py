@@ -47,15 +47,6 @@ def print_warning(message: str) -> None:
 
 
 # ==============================
-# Custom exceptions & errors
-# ==============================
-
-
-class ConfigValidationError(Exception):
-    pass
-
-
-# ==============================
 # Validators
 # ==============================
 
@@ -63,9 +54,9 @@ class ConfigValidationError(Exception):
 def validate_directory(value: str) -> Path:
     path = Path(value)
     if not path.exists():
-        raise ConfigValidationError(f"Directory '{path}' does not exist.")
+        raise Exception(f"Directory '{path}' does not exist.")
     if not path.is_dir():
-        raise ConfigValidationError(f"Path '{path}' is not a directory.")
+        raise Exception(f"Path '{path}' is not a directory.")
 
     return path
 
@@ -73,7 +64,7 @@ def validate_directory(value: str) -> Path:
 def validate_url(url: str) -> ParseResult:
     parsed = urlparse(url)
     if not all([parsed.scheme, parsed.netloc]):
-        raise ConfigValidationError(f"Invalid '{url}'.")
+        raise Exception(f"Invalid '{url}'.")
 
     return parsed
 
@@ -143,17 +134,15 @@ def load_config(config_file: Path) -> Config:
         return Config(site=site_config, params=params)
     except tomllib.TOMLDecodeError as e:
         raise Exception(f"Failed to parse TOML from '{config_file.name}': {e}.")
-    except ConfigValidationError as e:
-        raise Exception(f"Configuration validation failed: {e}")
     except Exception as e:
-        raise Exception(f"Unexpected error reading '{config_file.name}': {e}")
+        raise Exception(f"Error reading '{config_file.name}': {e}")
 
 
 def copy_static_files(content_path: Path, static_dir: Path, output_path: Path) -> None:
     copytree(
         content_path,
         output_path,
-        ignore=ignore_patterns("*.md", "*.xml}"),
+        ignore=ignore_patterns("*.md", "*.xml"),
         dirs_exist_ok=True,
     )
     print_success(f"Cloned non-Markdown files to '{output_path.name}' build folder.")
@@ -171,8 +160,8 @@ def copy_static_files(content_path: Path, static_dir: Path, output_path: Path) -
 def render_template(template, parent, context, pages):
     if parent == "root":
         return template.render(**context, pages=pages)
-    else:
-        return template.render(**context, pages=pages[parent])
+
+    return template.render(**context, pages=pages[parent])
 
 
 # ==============================
@@ -198,7 +187,7 @@ def build(config: Config) -> None:
 
         source = frontmatter.load(absolute_path)
         content = markdown.markdown(
-            source.content, extensions=["fenced_code", "tables", "wikilinks", "abbr"]
+            source.content, extensions=["fenced_code", "tables", "abbr"]
         )
         template_path = relative_path.with_suffix(".html")
 
