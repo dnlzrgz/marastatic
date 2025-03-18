@@ -1,6 +1,6 @@
 # /// script
 # requires-python=">=3.12"
-# dependencies = [
+# dependencies=[
 #   "jinja2>=3.1.6",
 #   "markdown>=3.7",
 #   "python-frontmatter>=1.1.0",

@@ -1,5 +1,7 @@
 # marastatic
 
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+
 <pre style="font-style: monospace;">
                                            __             __
                                           /\ \__         /\ \__  __
@@ -30,6 +32,9 @@ marastatic relies on a `config.toml` file to define paths for your static assets
 3. The script checks if an RSS feed needs to be created.
 4. It also checks if a root `sitemap.xml` file needs to be generated.
 5. Finally, it copies any static assets and non-markdown files found in the content folder to the output directory.
+
+> [!TIP]  
+> If you're interested in seeing a "real world" example, check out the repository for my personal [portfolio](https://github.com/dnlzrgz/portfolio).
 
 ## Downloading the script
 
