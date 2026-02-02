@@ -188,7 +188,7 @@ def generate_rss_feeds(
             console.print(f"[green bold]Ok[/]: Created RSS feed for '{section_name}'")
         except Exception:
             console.print(
-                f"[orange bold]Warn[/]: No rss feed template found for '{section_name}'."
+                f"[yellow bold]Warn[/]: No rss feed template found for '{section_name}'."
             )
 
 
@@ -201,7 +201,7 @@ def generate_sitemap(
         (config.build_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
         console.print("[green bold]Ok[/]: Created sitemap.xml")
     except Exception:
-        console.print("[orange bold]Warn[/]: No sitemap.xml template found.")
+        console.print("[yellow bold]Warn[/]: No sitemap.xml template found.")
 
 
 def generate_pages(jinja_env: Jinja2Environment, pages: list[Page]) -> None:
