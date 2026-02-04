@@ -51,24 +51,35 @@ keywords = ["script", "python", "ssg"]
 ## Running the script
 
 ```bash
-# Using uv (recommended)
+# Using uv
 uv run marastatic.py
 
 # Does the same thing
-uv run marastatic.py --config-file project.toml
+./marastatic.py --config-file project.toml
+```
+
+### Auto-rebuild
+
+While `marastatic` doesn't include anything similar to a live-server experience (right now at least), it includes a basic file watcher to trigger instant rebuilds.
+
+```bash
+uv run marastatic.py --watch
 ```
 
 ## The templates
 
-`marastatic` injects three main objects into all of your `Jinja2` templates:
+`marastatic` injects three main objects and one extra into all of your `Jinja2` templates:
 
 1. `page`: the current page being rendered. You can access `{{ page.content }}` and `{{ page.metadata.title }}` for example.
 2. `sections`: a dictionary that groups pages by the folder they're in. It's useful for loops like `{% for post in sections['blog'] %}`.
 3. `config`: all the settings that exist on your `config.toml` file. For example, to access the params you can use `{{ config.params.title }}`.
+4. `now`: a Python `datetime` object that represents the build time (sometimes it comes handy).
 
 > Top-level files (like `about.md`) will be grouped under `sections['root`]`.
 
-## Example of folder structure
+## Examples
+
+### Example of folder structure
 
 ```text
 

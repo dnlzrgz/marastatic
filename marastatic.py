@@ -7,6 +7,7 @@
 #   "markdown>=3.10.1",
 #   "python-frontmatter>=1.1.0",
 #   "rich>=14.3.1",
+#   "watchfiles>=1.1.1",
 # ]
 # ///
 
@@ -27,6 +28,7 @@ import tomllib
 from jinja2 import Environment as Jinja2Environment
 from jinja2 import FileSystemLoader
 from rich.console import Console
+from watchfiles import watch
 
 console = Console()
 
@@ -147,8 +149,7 @@ def get_all_pages(config: Config) -> list[Page]:
 
 
 def prepare_jinja_env(
-    config: Config,
-    pages: list[Page],
+    config: Config, pages: list[Page]
 ) -> tuple[Jinja2Environment, dict[str, list[Page]]]:
     jinja_env = Jinja2Environment(loader=FileSystemLoader(config.templates_dir))
 
@@ -168,9 +169,7 @@ def prepare_jinja_env(
 
 
 def generate_rss_feeds(
-    config: Config,
-    jinja_env: Jinja2Environment,
-    sections: dict[str, list[Page]],
+    config: Config, jinja_env: Jinja2Environment, sections: dict[str, list[Page]]
 ) -> None:
     for section_name, pages in sections.items():
         if section_name == "root":
@@ -192,10 +191,7 @@ def generate_rss_feeds(
             )
 
 
-def generate_sitemap(
-    config: Config,
-    jinja_env: Jinja2Environment,
-) -> None:
+def generate_sitemap(config: Config, jinja_env: Jinja2Environment) -> None:
     try:
         sitemap = jinja_env.get_template("sitemap.xml").render()
         (config.build_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
@@ -235,57 +231,66 @@ def clean(build_dir: Path) -> None:
 def build(config: Config) -> None:
     start_time = perf_counter()
 
-    with console.status(f"✨ Building {config.base_url}") as status:
-        status.update("🌱 Scanning content directory...")
-        pages = get_all_pages(config)
-        console.print(f"[bold green]Ok[/]: {len(pages)} pages found!")
+    console.print(f"✨ Building {config.base_url}")
 
-        status.update("🧰 Preparing Jinja2 environment...")
-        jinja_env, sections = prepare_jinja_env(config, pages)
+    console.print("🌱 Scanning content directory...")
+    pages = get_all_pages(config)
+    console.print(f"[bold green]Ok[/]: {len(pages)} pages found!")
 
-        status.update("🖨️ Rendering pages...")
-        generate_pages(jinja_env, pages)
+    console.print("🧰 Preparing Jinja2 environment...")
+    jinja_env, sections = prepare_jinja_env(config, pages)
 
-        status.update("📡 Generating RSS feeds and Sitemap...")
-        generate_rss_feeds(config, jinja_env, sections)
-        generate_sitemap(config, jinja_env)
+    console.print("🖨️ Rendering pages...")
+    generate_pages(jinja_env, pages)
 
-        status.update("📦 Copying static files...")
-        copy_static_files(config)
+    console.print("📡 Generating RSS feeds and Sitemap...")
+    generate_rss_feeds(config, jinja_env, sections)
+    generate_sitemap(config, jinja_env)
+
+    console.print("📦 Copying static files...")
+    copy_static_files(config)
 
     end_time = perf_counter()
     duration = end_time - start_time
     console.print(f"🚀 Build complete in {duration:.2f}s!")
 
 
+def watch_and_rebuild(config: Config) -> None:
+    console.print("📡 Watching for changes...")
+
+    paths = [config.content_dir, config.templates_dir, config.static_dir]
+    for _ in watch(*paths):
+        console.print("📡 Changes detected! Rebuilding...")
+        console.quiet = True
+        clean(config.build_dir)
+        build(config)
+        console.quiet = False
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="marastatic",
-        description="Extremely simple single-file static site generator.",
+        description="Single-file static site generator.",
     )
-    parser.add_argument(
-        "-c",
-        "--config-file",
-        type=Path,
-        default="config.toml",
-        help="Path to the configuration file (TOML).",
-    )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="Delete the build directory before starting a new build.",
-    )
+    parser.add_argument("--config-file", type=Path, default="config.toml")
+    parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
 
     try:
         config = load_config(args.config_file)
-
         if args.clean:
             clean(config.build_dir)
+
         build(config)
+        if args.watch:
+            watch_and_rebuild(config)
     except Exception as e:
         console.print(f"[bold red]Err[/]: {e}")
         sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("👋🏻 bye!")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
