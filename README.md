@@ -75,7 +75,7 @@ uv run marastatic.py --watch
 3. `config`: all the settings that exist on your `config.toml` file. For example, to access the params you can use `{{ config.params.title }}`.
 4. `now`: a Python `datetime` object that represents the build time (sometimes it comes handy).
 
-> Top-level files (like `about.md`) will be grouped under `sections['root`]`.
+> Top-level files (like `about.md`) will be grouped under `sections['root']`.
 
 ## Examples
 

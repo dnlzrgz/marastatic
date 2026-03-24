@@ -122,11 +122,7 @@ def get_url(base_url: str, rel_path: Path) -> str:
 def get_all_pages(config: Config) -> list[Page]:
     pages = []
     md = markdown.Markdown(
-        extensions=[
-            "fenced_code",
-            "tables",
-            "abbr",
-        ],
+        extensions=["fenced_code", "tables", "abbr"],
     )
 
     for rel_path in list_content(config.content_dir):
@@ -261,10 +257,7 @@ def watch_and_rebuild(config: Config) -> None:
     paths = [config.content_dir, config.templates_dir, config.static_dir]
     for _ in watch(*paths):
         console.print("📡 Changes detected! Rebuilding...")
-        console.quiet = True
-        clean(config.build_dir)
         build(config)
-        console.quiet = False
 
 
 def main():
