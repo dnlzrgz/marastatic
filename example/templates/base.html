@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.metadata.title or config.params.title }}</title>
+    <link href="/static/style.css" rel="stylesheet">
+  </head>
+  <body>
+    <nav><a href="/">Home</a></nav>
+    <main>
+      {% block content %}
+        {{ page.content|safe }}
+      {% endblock content %}
+    </main>
+    <footer>Build with marastatic at {{ now.year }}.</footer>
+  </body>
+</html>

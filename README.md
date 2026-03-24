@@ -8,7 +8,7 @@ A simple single-file static site generator in less than 300 lines written in Pyt
 
 I was curious about how challenging it would be to build a simple static site generator with as few dependencies as possible, portable, and easy to modify. I also wanted it to be a single-file script. The result is a thin, opinionated layer of logic on top of `Jinja2`.
 
-> If you're interested in seeing a "real world" example, check out the repository for my personal [portfolio](https://github.com/dnlzrgz/home).
+> If you're interested in seeing an example, check out the `example/` directory.
 
 ## How does it work?
 

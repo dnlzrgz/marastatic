@@ -1,0 +1,10 @@
+[site]
+base_url = "http://localhost:8000"
+static_dir = "example/static"
+templates_dir = "example/templates"
+content_dir = "example/content"
+build_dir = "example/output"
+
+[params]
+title = "Marastatic Example"
+description = "Single-file SSG."

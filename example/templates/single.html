@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+  <article>
+    <h1>{{ page.metadata.title }}</h1>
+    <p>Published on: {{ page.metadata.date }}</p>
+    {{ page.content|safe }}
+  </article>
+{% endblock content %}

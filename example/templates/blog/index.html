@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Latest posts</h2>
+  <ul>
+    {% for post in sections.blog|sort(attribute='metadata.date', reverse=True) %}
+      <li>
+        <a href="{{ post.url }}">{{ post.metadata.title }}</a>
+      </li>
+    {% else %}
+      <p>No posts.</p>
+    {% endfor %}
+  </ul>
+{% endblock content %}
