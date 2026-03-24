@@ -31,6 +31,8 @@ from watchfiles import watch
 
 console = Console()
 
+MARKDOWN_CONVERTER = markdown.Markdown(extensions=["fenced_code", "tables", "abbr"])
+
 
 @dataclass(slots=True, frozen=True)
 class Config:
@@ -68,8 +70,7 @@ class Page:
 
     @property
     def content(self) -> str:
-        md = markdown.Markdown(extensions=["fenced_code", "tables", "abbr"])
-        return md.convert(self.raw_content)
+        return MARKDOWN_CONVERTER.reset().convert(self.raw_content)
 
 
 def list_content(path: Path) -> list[Path]:
