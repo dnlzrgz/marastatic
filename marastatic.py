@@ -13,7 +13,6 @@
 
 import argparse
 import shutil
-import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -59,13 +58,18 @@ class Config:
 class Page:
     rel_path: Path
     metadata: dict
-    content: str
+    raw_content: str
     url: str
     dest_path: Path
 
     @property
     def parent(self) -> str:
         return self.rel_path.parent.name or "root"
+
+    @property
+    def content(self) -> str:
+        md = markdown.Markdown(extensions=["fenced_code", "tables", "abbr"])
+        return md.convert(self.raw_content)
 
 
 def list_content(path: Path) -> list[Path]:
@@ -121,20 +125,15 @@ def get_url(base_url: str, rel_path: Path) -> str:
 
 def get_all_pages(config: Config) -> list[Page]:
     pages = []
-    md = markdown.Markdown(
-        extensions=["fenced_code", "tables", "abbr"],
-    )
-
     for rel_path in list_content(config.content_dir):
         abs_path = config.content_dir / rel_path
 
         source = frontmatter.load(abs_path)
-        html_content = md.reset().convert(source.content)
 
         page = Page(
             rel_path=rel_path,
             metadata=source.metadata,
-            content=html_content,
+            raw_content=source.content,
             url=get_url(config.base_url, rel_path),
             dest_path=config.build_dir / rel_path.with_suffix(".html"),
         )
@@ -278,12 +277,10 @@ def main():
         build(config)
         if args.watch:
             watch_and_rebuild(config)
-    except Exception as e:
-        console.print(f"[bold red]Err[/]: {e}")
-        sys.exit(1)
     except KeyboardInterrupt:
         console.print("👋🏻 bye!")
-        sys.exit(0)
+    except Exception as e:
+        console.print(f"[bold red]Err[/]: {e}")
 
 
 if __name__ == "__main__":
