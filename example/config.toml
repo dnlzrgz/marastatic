@@ -8,3 +8,7 @@ build_dir = "example/output"
 [params]
 title = "Marastatic Example"
 description = "Single-file SSG."
+
+[params.author]
+name = "Someone"
+email ="someone@something.com"

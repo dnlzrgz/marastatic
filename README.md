@@ -17,7 +17,8 @@ I was curious about how challenging it would be to build a simple static site ge
 1. It scans your `content` directory (which will be specified in your `config.toml`), parsing your markdown files' frontmatter and converting their content to HTML.
 1. It groups your resulting pages into sections and prepares the `Jinja2` environment.
 1. It iterates through every page, selecting the most appropriate template for rendering it.
-1. Finally, it generates some files like `rss.xml` and a `sitemap.xml`. It also clones your static assets into the `build/` folder.
+1. It generates some files like `rss.xml`, `robots.txt`, and a `sitemap.xml` if the templates exists.
+1. Finally, it also clones your static assets into the `build/` folder.
 
 > [!WARNING]
 > Heavy-lifting tasks for bundling, asset management and so on will not be handled by `marastatic` and you'll need to rely on external tools for those.
@@ -76,24 +77,3 @@ uv run marastatic.py --watch
 4. `now`: a Python `datetime` object that represents the build time (sometimes it comes handy).
 
 > Top-level files (like `about.md`) will be grouped under `sections['root']`.
-
-## Examples
-
-### Example of folder structure
-
-```text
-
-├── config.toml
-├── content
-│   ├── index.md        # Uses templates/index.html
-│   └── blog
-│       ├── post-1.md   # Uses templates/blog/single.html
-│       └── index.md    # Uses templates/blog/index.html
-└── templates
-    ├── base.html
-    ├── index.html
-    └── blog
-        ├── index.html
-        ├── single.html
-        └── rss.xml
-```

@@ -181,9 +181,9 @@ def generate_rss_feeds(
             )
 
             console.print(f"[green bold]Ok[/]: Created RSS feed for '{section_name}'")
-        except Exception:
+        except Exception as e:
             console.print(
-                f"[yellow bold]Warn[/]: No rss feed template found for '{section_name}'."
+                f"[yellow bold]Warn[/]: No rss feed template found for '{section_name}': {e}"
             )
 
 
@@ -192,8 +192,17 @@ def generate_sitemap(config: Config, jinja_env: Jinja2Environment) -> None:
         sitemap = jinja_env.get_template("sitemap.xml").render()
         (config.build_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
         console.print("[green bold]Ok[/]: Created sitemap.xml")
-    except Exception:
-        console.print("[yellow bold]Warn[/]: No sitemap.xml template found.")
+    except Exception as e:
+        console.print(f"[yellow bold]Warn[/]: No sitemap.xml template found: {e}")
+
+
+def generate_robots(config: Config, jinja_env: Jinja2Environment) -> None:
+    try:
+        robots = jinja_env.get_template("robots.txt").render()
+        (config.build_dir / "robots.txt").write_text(robots, encoding="utf-8")
+        console.print("[green bold]Ok[/]: Created robots.txt")
+    except Exception as e:
+        console.print(f"[yellow bold]Warn[/]: No robots.txt template found: {e}")
 
 
 def generate_pages(jinja_env: Jinja2Environment, pages: list[Page]) -> None:
@@ -239,9 +248,10 @@ def build(config: Config) -> None:
     console.print("🖨️ Rendering pages...")
     generate_pages(jinja_env, pages)
 
-    console.print("📡 Generating RSS feeds and Sitemap...")
+    console.print("📡 Generating RSS feeds, Sitemap and robots.txt...")
     generate_rss_feeds(config, jinja_env, sections)
     generate_sitemap(config, jinja_env)
+    generate_robots(config, jinja_env)
 
     console.print("📦 Copying static files...")
     copy_static_files(config)

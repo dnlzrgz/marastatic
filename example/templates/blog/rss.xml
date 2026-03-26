@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>{{ config.params.title }}</title>
+    <link>{{ config.base_url }}/blog</link>
+    <description>{{ config.params.description }}</description>
+    <language>en-us</language>
+    <managingEditor>{{ config.params.author.email }} ({{config.params.author.name }})</managingEditor>
+    <webmaster>{{ config.params.author.email }} ({{config.params.author.name }})</webmaster>
+    <lastBuildDate>{{ now.strftime('%a, %d %b %Y %H:%M:%S +0000') }}</lastBuildDate>
+    <copyright>{{ now.year }}, {{ config.params.author.name }} ({{ config.params.author.email }})</copyright>
+    <atom:link href="{{ config.base_url }}/blog/rss.xml" rel="self" type="application/rss+xml" />
+    {% for page in pages | sort(attribute='metadata.date', reverse=True) %}
+    <item>
+      <title>{{ page.metadata.title }}</title>
+      <link>{{ page.url }}</link>
+      <guid isPermaLink="false">{{ page.url }}</guid>
+      <pubDate>{{ page.metadata.date.strftime('%a, %d %b %Y %H:%M:%S +0000') if page.metadata.date else now.strftime('%a, %d %b %Y %H:%M:%S +0000') }}</pubDate>
+      <description>
+      {% if page.metadata.summary %}
+      <![CDATA[{{ page.metadata.summary }}]]>
+      {% else %}
+      <![CDATA[{{ page.content | truncate(300) }}]]>
+      {% endif %}
+      </description>
+    </item>
+    {% endfor %}
+  </channel>
+</rss>
