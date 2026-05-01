@@ -3,6 +3,7 @@ base_url = "http://localhost:8000"
 static_dir = "example/static"
 templates_dir = "example/templates"
 content_dir = "example/content"
+archetypes_dir = "example/archetypes"
 build_dir = "example/output"
 
 [params]
@@ -11,4 +12,4 @@ description = "Single-file SSG."
 
 [params.author]
 name = "Someone"
-email ="someone@something.com"
+email = "someone@something.com"
