@@ -9,20 +9,16 @@
 # ]
 # ///
 
-import argparse
-import shutil
+import argparse, os, shutil, subprocess
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import frontmatter
-import markdown
-import tomllib
+import frontmatter, markdown, tomllib
 from jinja2 import Environment, FileSystemLoader
 
-# Logging helpers
 G, Y, R, B, RES = "\033[32m", "\033[33m", "\033[31m", "\033[1m", "\033[0m"
 
 
@@ -42,27 +38,31 @@ def err(msg):
     print(f"{B}{R}x {RES}{'ERR':<4} {msg}")
 
 
-MARKDOWN_CONVERTER = markdown.Markdown(extensions=["fenced_code", "tables", "abbr"])
+@dataclass(slots=True, frozen=True)
+class Ok[T]:
+    value: T
+
+
+@dataclass(slots=True, frozen=True)
+class Err[E]:
+    err: E
+
+
+type Result[T, E] = Ok[T] | Err[E]
 
 
 @dataclass(slots=True, frozen=True)
 class Config:
     base_url: str
-
     static_dir: Path
     templates_dir: Path
     content_dir: Path
     archetypes_dir: Path | None
     build_dir: Path
-
     params: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        for field_name in [
-            "static_dir",
-            "templates_dir",
-            "content_dir",
-        ]:
+        for field_name in ("static_dir", "templates_dir", "content_dir"):
             path = getattr(self, field_name)
             if not path.exists() or not path.is_dir():
                 raise FileNotFoundError(
@@ -86,7 +86,14 @@ class Page:
 
     @property
     def content(self) -> str:
-        return MARKDOWN_CONVERTER.reset().convert(self.raw_content)
+        md = markdown.Markdown(extensions=["fenced_code", "tables", "abbr"])
+        return md.convert(self.raw_content)
+
+
+@dataclass(slots=True, frozen=True)
+class RenderOutput:
+    dest_path: Path
+    content: str
 
 
 def load_config(config_file: Path) -> Config:
@@ -109,11 +116,197 @@ def load_config(config_file: Path) -> Config:
     )
 
 
-def create_content(
+def load_page(config: Config, abs_path: Path) -> Page:
+    rel_path = abs_path.relative_to(config.content_dir)
+    source = frontmatter.load(abs_path)
+    url = f"{config.base_url.rstrip('/')}/{rel_path.with_suffix('.html').as_posix()}"
+    return Page(
+        rel_path=rel_path,
+        metadata=source.metadata,
+        raw_content=source.content,
+        url=url,
+        dest_path=config.build_dir / rel_path.with_suffix(".html"),
+    )
+
+
+def load_all_pages(config: Config) -> list[Page]:
+    return [load_page(config, path) for path in config.content_dir.rglob("*.md")]
+
+
+def group_pages(pages: list[Page]) -> dict[str, list[Page]]:
+    sections = defaultdict(list)
+    for page in pages:
+        if page.rel_path.stem != "index":
+            sections[page.parent].append(page)
+
+    return sections
+
+
+def make_jinja_env(
+    config: Config,
+    pages: list[Page],
+    sections: dict[str, list[Page]],
+) -> Environment:
+    env = Environment(
+        loader=FileSystemLoader(config.templates_dir),
+    )
+    env.globals.update(
+        config=config, pages=pages, sections=sections, now=datetime.now()
+    )
+
+    return env
+
+
+def render_page(env: Environment, page: Page) -> Result[RenderOutput, str]:
+    candidates = [
+        page.rel_path.with_suffix(".html").as_posix(),
+        f"{page.parent}/single.html",
+        "single.html",
+    ]
+
+    try:
+        template = env.get_or_select_template(candidates)
+        return Ok(
+            RenderOutput(
+                dest_path=page.dest_path,
+                content=template.render(page=page),
+            )
+        )
+    except Exception as e:
+        return Err(f"no template found for '{page.rel_path}': {e}")
+
+
+def render_feed(
+    env: Environment,
+    section_name: str,
+    pages: list[Page],
+    build_dir: Path,
+) -> Result[RenderOutput, str]:
+    try:
+        template = env.get_template(f"{section_name}/rss.xml")
+        return Ok(
+            RenderOutput(
+                dest_path=build_dir / section_name / "rss.xml",
+                content=template.render(pages=pages),
+            )
+        )
+    except Exception as e:
+        return Err(f"no RSS template for '{section_name}' found: {e}")
+
+
+def render_meta(
+    env: Environment,
+    template_name: str,
+    dest_path: Path,
+) -> Result[RenderOutput, str]:
+    try:
+        return Ok(
+            RenderOutput(
+                dest_path=dest_path,
+                content=env.get_template(template_name).render(),
+            )
+        )
+    except Exception as e:
+        return Err(f"no {template_name} template: {e}")
+
+
+def collect(
+    config: Config,
+    env: Environment,
+    pages: list[Page],
+    sections: dict[str, list[Page]],
+) -> list[Result[RenderOutput, str]]:
+    page_renders = [render_page(env, page) for page in pages]
+    feed_renders = [
+        render_feed(env, name, section_pages, config.build_dir)
+        for name, section_pages in sections.items()
+        if name != "root"
+    ]
+    meta_renders = [
+        render_meta(env, "sitemap.xml", config.build_dir / "sitemap.xml"),
+        render_meta(env, "robots.txt", config.build_dir / "robots.txt"),
+    ]
+
+    return [*page_renders, *feed_renders, *meta_renders]
+
+
+def write(output: RenderOutput) -> Result[str, str]:
+    try:
+        output.dest_path.parent.mkdir(parents=True, exist_ok=True)
+        output.dest_path.write_text(output.content, encoding="utf-8")
+        return Ok(str(output.dest_path))
+    except Exception as e:
+        return Err(str(e))
+
+
+def write_all(results: list[Result[RenderOutput, str]]) -> tuple[list[str], list[str]]:
+    successes, failures = [], []
+
+    for result in results:
+        match result:
+            case Ok(value=output):
+                match write(output):
+                    case Ok(value=uri):
+                        successes.append(uri)
+                    case Err(err=e):
+                        failures.append(e)
+            case Err(err=e):
+                failures.append(e)
+
+    return successes, failures
+
+
+def copy_static_files(config: Config) -> None:
+    shutil.copytree(
+        config.content_dir,
+        config.build_dir,
+        ignore=shutil.ignore_patterns("*.md", "*.xml"),
+        dirs_exist_ok=True,
+    )
+    shutil.copytree(
+        config.static_dir,
+        config.build_dir / config.static_dir.name,
+        dirs_exist_ok=True,
+    )
+
+
+def clean_build_dir(build_dir: Path) -> None:
+    shutil.rmtree(build_dir)
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+
+def cmd_build(config: Config, do_clean: bool) -> None:
+    if do_clean:
+        clean_build_dir(config.build_dir)
+        info(f"cleaned '{config.build_dir.name}'")
+
+    info(f"building {config.base_url}")
+
+    pages = load_all_pages(config)
+    ok(f"{len(pages)} pages found")
+
+    sections = group_pages(pages)
+    env = make_jinja_env(config, pages, sections)
+    renders = collect(config, env, pages, sections)
+
+    successes, failures = write_all(renders)
+
+    for label in successes:
+        ok(f"rendered '{label}'")
+
+    for failure in failures:
+        warn(failure)
+
+    copy_static_files(config)
+    ok(f"copied static files to '{config.build_dir.name}'")
+    info("build complete!")
+
+
+def cmd_new(
     config: Config,
     archetype: str,
     destination: Path,
-    open: bool = False,
+    open_editor: bool,
 ) -> None:
     if not config.archetypes_dir:
         err("archetypes directory not defined.")
@@ -125,19 +318,16 @@ def create_content(
 
     target = config.content_dir / destination
     if target.exists():
-        warm(f"'{target}' already exists.")
+        warn(f"'{target}' already exists.")
         return
 
     target.write_text(archetype_file.read_text())
     ok(f"created new {archetype} at '{target}'!")
 
-    if open:
-        import os
-        import subprocess
-
+    if open_editor:
         editor = os.environ.get("EDITOR")
         if not editor:
-            err("no editor found in $EDITOR environment variables.")
+            err("no editor found in $EDITOR environment variable.")
             return
         try:
             info(f"opening '{target}'...")
@@ -146,182 +336,30 @@ def create_content(
             err(f"could not open the editor: {e}")
 
 
-def copy_static_files(config: Config) -> None:
-    content_dir = config.content_dir
-    output_dir = config.build_dir
-    static_dir = config.static_dir
-    shutil.copytree(
-        content_dir,
-        output_dir,
-        ignore=shutil.ignore_patterns("*.md", "*.xml"),
-        dirs_exist_ok=True,
-    )
-    ok(f"cloned non-markdown files to '{output_dir.name}'")
-
-    shutil.copytree(
-        static_dir,
-        output_dir.joinpath(static_dir.name),
-        dirs_exist_ok=True,
-    )
-    ok(f"cloned static folder '{static_dir.name}' into '{output_dir.name}'")
-
-
-def get_all_pages(config: Config) -> list[Page]:
-    base_url = config.base_url
-    pages = []
-    for abs_path in config.content_dir.rglob("*.md"):
-        rel_path = abs_path.relative_to(config.content_dir)
-        source = frontmatter.load(abs_path)
-        url = f"{base_url.rstrip('/')}/{rel_path.with_suffix('.html').as_posix()}"
-        page = Page(
-            rel_path=rel_path,
-            metadata=source.metadata,
-            raw_content=source.content,
-            url=url,
-            dest_path=config.build_dir / rel_path.with_suffix(".html"),
-        )
-
-        pages.append(page)
-
-    return pages
-
-
-def prepare_jinja_env(
-    config: Config, pages: list[Page]
-) -> tuple[Environment, dict[str, list[Page]]]:
-    jinja_env = Environment(loader=FileSystemLoader(config.templates_dir))
-
-    sections = defaultdict(list)
-    for page in pages:
-        if page.rel_path.stem != "index":
-            sections[page.parent].append(page)
-
-    jinja_env.globals.update(
-        config=config,
-        pages=pages,
-        sections=sections,
-        now=datetime.now(),
-    )
-
-    return jinja_env, sections
-
-
-def generate_rss_feeds(
-    config: Config, jinja_env: Environment, sections: dict[str, list[Page]]
-) -> None:
-    for section_name, pages in sections.items():
-        if section_name == "root":
-            continue
-
-        try:
-            rss_template = jinja_env.get_template(f"{section_name}/rss.xml")
-            rss_path = config.build_dir / section_name / "rss.xml"
-            rss_path.parent.mkdir(parents=True, exist_ok=True)
-            rss_path.write_text(
-                rss_template.render(pages=pages),
-                encoding="utf-8",
-            )
-
-            ok(f"created RSS feed for '{section_name}'")
-        except Exception as e:
-            warm(f"no rss feed template found for '{section_name}': {e}")
-
-
-def generate_sitemap(config: Config, jinja_env: Environment) -> None:
-    try:
-        sitemap = jinja_env.get_template("sitemap.xml").render()
-        (config.build_dir / "sitemap.xml").write_text(sitemap, encoding="utf-8")
-        ok("created sitemap.xml")
-    except Exception as e:
-        warm(f"no sitemap.xml template found: {e}")
-
-
-def generate_robots(config: Config, jinja_env: Environment) -> None:
-    try:
-        robots = jinja_env.get_template("robots.txt").render()
-        (config.build_dir / "robots.txt").write_text(robots, encoding="utf-8")
-        ok("created robots.txt")
-    except Exception as e:
-        warm(f"no robots.txt template found: {e}")
-
-
-def generate_pages(jinja_env: Environment, pages: list[Page]) -> None:
-    for page in pages:
-        template_names = [
-            page.rel_path.with_suffix(".html").as_posix(),
-            f"{page.parent}/single.html",
-            "single.html",
-        ]
-
-        try:
-            template = jinja_env.get_or_select_template(template_names)
-            output = template.render(page=page)
-
-            page.dest_path.parent.mkdir(parents=True, exist_ok=True)
-            page.dest_path.write_text(output, encoding="utf-8")
-            ok(f"rendered '{page.url}' successfully")
-        except Exception as e:
-            err(f"no template found for '{page.rel_path}': {e}")
-
-
-def clean(build_dir: Path) -> None:
-    shutil.rmtree(build_dir)
-    build_dir.mkdir(parents=True, exist_ok=True)
-    info(f"cleaned '{build_dir.name}'!")
-
-
-def build(config: Config) -> None:
-    info(f"building {config.base_url}")
-
-    pages = get_all_pages(config)
-    ok(f"{len(pages)} pages found!")
-
-    jinja_env, sections = prepare_jinja_env(config, pages)
-    generate_pages(jinja_env, pages)
-    generate_rss_feeds(config, jinja_env, sections)
-    generate_sitemap(config, jinja_env)
-    generate_robots(config, jinja_env)
-    copy_static_files(config)
-
-    info("build complete!")
-
-
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="marastatic",
         description="single-file static site generator.",
     )
     parser.add_argument("--config-file", type=Path, default="config.toml")
-
-    subparsers = parser.add_subparsers(
-        dest="command",
-        help="Available commands.",
-    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands.")
 
     build_parser = subparsers.add_parser("build", help="Build the site.")
     build_parser.add_argument("-c", "--clean", action="store_true")
 
     new_parser = subparsers.add_parser("new", help="Create new content.")
-    new_parser.add_argument("archetype", type=str, help="Archetype name.")
-    new_parser.add_argument("destination", type=Path, help="Relative path to content.")
-    new_parser.add_argument(
-        "-o",
-        "--open",
-        action="store_true",
-        help="Open the file in your default editor.",
-    )
+    new_parser.add_argument("archetype", type=str)
+    new_parser.add_argument("destination", type=Path)
+    new_parser.add_argument("-o", "--open", action="store_true")
 
     args = parser.parse_args()
-    command = args.command or "build"
     config = load_config(args.config_file)
 
-    if command == "new":
-        create_content(config, args.archetype, args.destination, args.open)
-    else:
-        if getattr(args, "clean", False):
-            clean(config.build_dir)
-
-        build(config)
+    match args.command or "build":
+        case "build":
+            cmd_build(config, getattr(args, "clean", False))
+        case "new":
+            cmd_new(config, args.archetype, args.destination, args.open)
 
 
 if __name__ == "__main__":
