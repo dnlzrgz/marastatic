@@ -17,25 +17,21 @@ from pathlib import Path
 from typing import Any
 
 import frontmatter, markdown, tomllib
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-G, Y, R, B, RES = "\033[32m", "\033[33m", "\033[31m", "\033[1m", "\033[0m"
+G, R, B, RES = "\033[32m", "\033[31m", "\033[1m", "\033[0m"
 
 
 def info(msg):
-    print(f"{B}# {RES}{'INFO':<4} {msg}")
+    print(f"{B}{'INFO':<4}{RES} {msg}")
 
 
 def ok(msg):
-    print(f"{B}{G}+ {RES}{'OK':<4} {msg}")
-
-
-def warm(msg):
-    print(f"{B}{Y}! {RES}{'WARN':<4} {msg}")
+    print(f"{B}{G}{'OK':<4}{RES} {msg}")
 
 
 def err(msg):
-    print(f"{B}{R}x {RES}{'ERR':<4} {msg}")
+    print(f"{B}{R}{'ERR':<4}{RES} {msg}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -143,9 +139,7 @@ def group_pages(pages: list[Page]) -> dict[str, list[Page]]:
 
 
 def make_jinja_env(
-    config: Config,
-    pages: list[Page],
-    sections: dict[str, list[Page]],
+    config: Config, pages: list[Page], sections: dict[str, list[Page]]
 ) -> Environment:
     env = Environment(
         loader=FileSystemLoader(config.templates_dir),
@@ -172,8 +166,10 @@ def render_page(env: Environment, page: Page) -> Result[RenderOutput, str]:
                 content=template.render(page=page),
             )
         )
-    except Exception as e:
+    except TemplateNotFound as e:
         return Err(f"no template found for '{page.rel_path}': {e}")
+    except Exception as e:
+        return Err(f"failed to render '{page.rel_path}': {e}")
 
 
 def render_feed(
@@ -295,7 +291,7 @@ def cmd_build(config: Config, do_clean: bool) -> None:
         ok(f"rendered '{label}'")
 
     for failure in failures:
-        warn(failure)
+        err(failure)
 
     copy_static_files(config)
     ok(f"copied static files to '{config.build_dir.name}'")
@@ -318,7 +314,7 @@ def cmd_new(
 
     target = config.content_dir / destination
     if target.exists():
-        warn(f"'{target}' already exists.")
+        err(f"'{target}' already exists.")
         return
 
     target.write_text(archetype_file.read_text())
@@ -327,7 +323,7 @@ def cmd_new(
     if open_editor:
         editor = os.environ.get("EDITOR")
         if not editor:
-            err("no editor found in $EDITOR environment variable.")
+            err("no editor found in $EDITOR environment variables.")
             return
         try:
             info(f"opening '{target}'...")
