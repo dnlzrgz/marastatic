@@ -1,7 +1,7 @@
 # marastatic
 
 <p style="text-align: center;">
-A simple single-file static site generator ~~in less than 300 lines~~ written in Python.
+A simple single-file static site generator written in Python.
 </p>
 
 ## Motivation
